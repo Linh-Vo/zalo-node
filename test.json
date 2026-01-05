@@ -1,0 +1,622 @@
+{
+  "name": "Zalo OCR (Group Context Aware)",
+  "nodes": [
+    {
+      "parameters": {
+        "eventTypes": [
+          "group",
+          "user"
+        ],
+        "selfListen": false
+      },
+      "id": "trigger-node",
+      "name": "Zalo Message Trigger",
+      "type": "n8n-nodes-mtai-zalo-test-trial.zaloMessageTrigger",
+      "typeVersion": 1,
+      "position": [
+        100,
+        300
+      ],
+      "credentials": {
+        "zaloApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Zalo API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.message.data.msgType }}",
+              "value2": "chat.photo"
+            }
+          ]
+        }
+      },
+      "id": "filter-images",
+      "name": "Check Object Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const staticData = getWorkflowStaticData('global');\nif (!staticData.lastRequests) {\n  staticData.lastRequests = {};\n}\n\nconst items = $input.all();\nconst results = [];\nconst COOLDOWN_MS = 30000; // 30 seconds cooldown per user\nconst now = Date.now();\n\nfor (const item of items) {\n  // Try to get Sender ID (fromId or fallback to threadId if direct)\n  const msg = item.json.message || {};\n  // message.data.fromId typically holds the sender ID in group chats\n  const userId = msg.data.fromUid || msg.data.fromId || msg.threadId;\n\n  let isSpam = false;\n  if (userId) {\n    const lastTime = staticData.lastRequests[userId] || 0;\n    if (now - lastTime < COOLDOWN_MS) {\n      isSpam = true;\n    } else {\n      // Update timestamp\n      staticData.lastRequests[userId] = now;\n    }\n  }\n  \n  results.push({\n     json: {\n       ...item.json,\n       is_spam: isSpam\n     }\n  });\n}\n\nreturn results;"
+      },
+      "id": "rate-limiter",
+      "name": "Anti-Spam Rate Limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_spam }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "check-spam",
+      "name": "Is Not Spam?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "zaloGroup",
+        "operation": "getGroupInfo",
+        "groupId": "={{ $json.message.threadId }}"
+      },
+      "id": "get-group-info",
+      "name": "Get Group Info",
+      "type": "n8n-nodes-mtai-zalo-test-trial.zaloGroup",
+      "typeVersion": 1,
+      "position": [
+        750,
+        150
+      ],
+      "credentials": {
+        "zaloApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Zalo API account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n// Get original message data from 'Is Not Spam?' node\n// Use try-catch or optional chaining to avoid errors\nconst originalItems = $('Is Not Spam?').all();\nconst results = [];\n\nfor (let i = 0; i < items.length; i++) {\n    const groupData = items[i].json;\n    const original = originalItems[i] ? originalItems[i].json : {};\n    \n    // Check if groupInfo exists (successful fetch)\n    let groupName = 'Riêng tư'; // Default for Direct Messages\n    if (groupData.groupInfo && groupData.groupInfo.name) {\n        groupName = groupData.groupInfo.name;\n    }\n    \n    results.push({\n        json: {\n            ...original,\n            group_name: groupName\n        }\n    });\n}\n\nreturn results;"
+      },
+      "id": "merge-group-data",
+      "name": "Merge Group Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        750,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.message.data.content.href }}",
+        "responseFormat": "file",
+        "options": {}
+      },
+      "id": "download-image",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        900,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $binary.data ? true : false }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-download",
+      "name": "Check Download",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "threadId": "YOUR_ADMIN_USER_ID",
+        "type": 0,
+        "message": "={{ '⚠️ Lỗi Hệ Thống: Không thể tải ảnh từ người gửi ' + ($json.message.data.fromDisplayName || $json.message.data.fromId) + '. Vui lòng kiểm tra thủ công.' }}",
+        "urgency": 2
+      },
+      "id": "notify-error",
+      "name": "Notify Error",
+      "type": "n8n-nodes-mtai-zalo-test-trial.zaloSendMessage",
+      "typeVersion": 4,
+      "position": [
+        1050,
+        500
+      ],
+      "credentials": {
+        "zaloApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Zalo API account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\nfor (let i = 0; i < items.length; i++) {\n  const binaryDataBuffer = await this.helpers.getBinaryDataBuffer(i, 'data');\n  const base64 = binaryDataBuffer.toString('base64');\n  let mimeType = items[i].binary.data.mimeType;\n  if (mimeType === 'image/jpg') mimeType = 'image/jpeg';\n  results.push({ json: { base64, mimeType } });\n}\nreturn results;"
+      },
+      "id": "prepare-gemini",
+      "name": "Format Data for Gemini",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyC16gCNKR90zhiPE4DtDck87YKn4njvHjk",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "contents",
+              "value": "={{ [ { \"parts\": [ { \"text\": \"Hãy phân tích ảnh này và xác định xem đây có phải là ảnh chụp màn hình giao dịch ngân hàng (bill chuyển khoản) hay không.\\n\\nNếu KHÔNG PHẢI: Trả về JSON: { \\\"is_transaction\\\": false }\\n\\nNếu PHẢI: Trích xuất thông tin và trả về JSON:\\n{\\n  \\\"is_transaction\\\": true,\\n  \\\"sender\\\": \\\"...\\\",\\n  \\\"receiver\\\": \\\"...\\\",\\n  \\\"amount\\\": \\\"... (chỉ lấy số, không dùng dấu chấm hay phẩy phân cách)\\\",\\n  \\\"content\\\": \\\"...\\\",\\n  \\\"time\\\": \\\"...\\\"\\n}\\nChỉ trả về JSON thuần, không markdown.\" }, { \"inline_data\": { \"mime_type\": $json.mimeType, \"data\": $json.base64 } } ] } ] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "gemini-ocr",
+      "name": "Gemini Pro Vision (OCR)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        1400,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const geminiRaw = items[0].json.candidates[0].content.parts[0].text;\nconst jsonString = geminiRaw.replace(/```json/g, '').replace(/```/g, '').trim();\ntry {\n  const parsedData = JSON.parse(jsonString);\n  \n     let isValid = false;\n\n  if (parsedData.is_transaction) {\n     // 1. Validate Amount\n     if (parsedData.amount) {\n        let amountStr = String(parsedData.amount).replace(/[^0-9]/g, '');\n        let amountNum = parseFloat(amountStr);\n        if (!isNaN(amountNum) && amountNum > 0) {\n            parsedData.amount = amountNum;\n             try {\n                parsedData.amount_formatted = amountNum.toLocaleString('vi-VN') + ' VND';\n            } catch (err) {\n                parsedData.amount_formatted = amountStr.replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.') + ' VND';\n            }\n        } else {\n            parsedData.amount = null;\n            parsedData.amount_formatted = '0 VND';\n        }\n     } else {\n         parsedData.amount_formatted = '0 VND';\n     }\n\n     // 2. Strict Check: Must have Sender AND Receiver\n     if (parsedData.sender && parsedData.receiver) {\n         isValid = true;\n     }\n  }\n\n  parsedData.is_transaction = isValid;\n  return [{ json: parsedData }];\n} catch (e) {\n  return [{ json: { error: \"Parsing Failed\", raw: geminiRaw, is_transaction: false } }];\n}"
+      },
+      "id": "parse-json",
+      "name": "Parse Gemini JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_transaction }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-transaction",
+      "name": "Is Transaction?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1800,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "options": {}
+      },
+      "id": "read-sheet",
+      "name": "Read History",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2000,
+        300
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const newData = $('Merge Group Data').first().json;\n// We need to merge Gemini Data into newData here too, or access from prev node\nconst geminiData = $('Parse Gemini JSON').first().json;\nconst fullData = { ...newData, ...geminiData };\n\nconst history = $input.all();\n\n// Basic deduplication: Check consistent fields\n// (Sender + Amount + Receiver + Time match)\nconst isDuplicate = history.some(item => {\n    const row = item.json;\n    return row.Sender === fullData.sender &&\n           row.Receiver === fullData.receiver &&\n           String(row.Amount) === String(fullData.amount) &&\n           row.Time === fullData.time;\n});\n\nreturn [{ json: { ...fullData, is_duplicate: isDuplicate } }];"
+      },
+      "id": "check-duplicates",
+      "name": "Detect Duplicates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.is_duplicate }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "id": "filter-duplicates",
+      "name": "Is New?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Group": "={{ $json.group_name }}",
+            "Sender": "={{ $json.sender }}",
+            "Receiver": "={{ $json.receiver }}",
+            "Amount": "={{ $json.amount }}",
+            "Content": "={{ $json.content }}",
+            "Time": "={{ $json.time }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+             {
+              "id": "Group",
+              "displayName": "Group",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Sender",
+              "displayName": "Sender",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Receiver",
+              "displayName": "Receiver",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Amount",
+              "displayName": "Amount",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Content",
+              "displayName": "Content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false,
+              "type": "string",
+              "readOnly": false
+            },
+            {
+              "id": "Time",
+              "displayName": "Time",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false,
+              "type": "string",
+              "readOnly": false
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "google-sheets-save",
+      "name": "Save to Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2600,
+        200
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "threadId": "YOUR_ADMIN_USER_ID",
+        "type": 0,
+        "message": "={{ '💰 Thông báo giao dịch mới:\\n- Nhóm: ' + ($json.group_name || 'Riêng tư') + '\\n- Người gửi: ' + ($json.sender || 'Không rõ') + '\\n- Người nhận: ' + ($json.receiver || 'Không rõ') + '\\n- Số tiền: ' + ($json.amount_formatted || '0 VND') + '\\n- Nội dung: ' + ($json.content || 'Không có') + '\\n- Thời gian: ' + ($json.time || 'vừa xong') }}",
+        "urgency": 0
+      },
+      "id": "reply-user",
+      "name": "Notify Admin",
+      "type": "n8n-nodes-mtai-zalo-test-trial.zaloSendMessage",
+      "typeVersion": 4,
+      "position": [
+        2600,
+        450
+      ],
+      "credentials": {
+        "zaloApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Zalo API account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Zalo Message Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Object Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Object Type": {
+      "main": [
+        [
+          {
+            "node": "Anti-Spam Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anti-Spam Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Is Not Spam?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Not Spam?": {
+      "main": [
+        [
+          {
+            "node": "Get Group Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Group Info": {
+      "main": [
+        [
+          {
+            "node": "Merge Group Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Group Data": {
+      "main": [
+        [
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Check Download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Download": {
+        "main": [
+            [
+                {
+                    "node": "Format Data for Gemini",
+                    "type": "main",
+                    "index": 0
+                }
+            ],
+            [
+                {
+                    "node": "Notify Error",
+                    "type": "main",
+                    "index": 0
+                }
+            ]
+        ]
+    },
+    "Format Data for Gemini": {
+        "main": [
+          [
+            {
+              "node": "Gemini Pro Vision (OCR)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+    },
+    "Gemini Pro Vision (OCR)": {
+      "main": [
+        [
+          {
+            "node": "Parse Gemini JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Gemini JSON": {
+        "main": [
+          [
+            {
+                "node": "Is Transaction?",
+                "type": "main",
+                "index": 0
+            }
+          ]
+        ]
+    },
+    "Is Transaction?": {
+        "main": [
+            [
+                {
+                    "node": "Read History",
+                    "type": "main",
+                    "index": 0
+                }
+            ]
+        ]
+    },
+    "Read History": {
+        "main": [
+            [
+                {
+                    "node": "Detect Duplicates",
+                    "type": "main",
+                    "index": 0
+                }
+            ]
+        ]
+    },
+    "Detect Duplicates": {
+        "main": [
+            [
+                {
+                    "node": "Is New?",
+                    "type": "main",
+                    "index": 0
+                }
+            ]
+        ]
+    },
+    "Is New?": {
+        "main": [
+            [
+                {
+                    "node": "Save to Sheets",
+                    "type": "main",
+                    "index": 0
+                },
+                {
+                    "node": "Notify Admin",
+                    "type": "main",
+                    "index": 0
+                }
+            ]
+        ]
+    }
+  }
+}
