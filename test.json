@@ -189,20 +189,20 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=AIzaSyC16gCNKR90zhiPE4DtDck87YKn4njvHjk",
-        "sendBody": true,
-        "contentType": "json",
-        "bodyParameters": {
-          "parameters": [
-            {
-              "name": "contents",
-              "value": "={{ [ { \"parts\": [ { \"text\": \"Hãy phân tích ảnh này và xác định xem đây có phải là ảnh chụp màn hình giao dịch ngân hàng (bill chuyển khoản) hay không.\\n\\nNếu KHÔNG PHẢI: Trả về JSON: { \\\"is_transaction\\\": false }\\n\\nNếu PHẢI: Trích xuất thông tin và trả về JSON:\\n{\\n  \\\"is_transaction\\\": true,\\n  \\\"sender\\\": \\\"...\\\",\\n  \\\"receiver\\\": \\\"...\\\",\\n  \\\"amount\\\": \\\"... (chỉ lấy số, không dùng dấu chấm hay phẩy phân cách)\\\",\\n  \\\"content\\\": \\\"...\\\",\\n  \\\"time\\\": \\\"...\\\"\\n}\\nChỉ trả về JSON thuần, không markdown.\" }, { \"inline_data\": { \"mime_type\": $json.mimeType, \"data\": $json.base64 } } ] } ] }}"
-            }
-          ]
-        },
-        "options": {}
-      },
+				"method": "POST",
+				"url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=test",
+				"sendBody": true,
+				"contentType": "json",
+				"bodyParameters": {
+					"parameters": [
+						{
+							"name": "contents",
+							"value": "={{ [ { \"parts\": [ { \"text\": \"Hãy phân tích ảnh này và xác định xem đây có phải là ảnh chụp màn hình giao dịch ngân hàng (bill chuyển khoản) hay không.\\n\\nNếu KHÔNG PHẢI: Trả về JSON: { \\\"is_transaction\\\": false }\\n\\nNếu PHẢI: Trích xuất thông tin và trả về JSON:\\n{\\n  \\\"is_transaction\\\": true,\\n  \\\"sender\\\": \\\"...\\\",\\n  \\\"receiver\\\": \\\"...\\\",\\n  \\\"amount\\\": \\\"... (chỉ lấy số, không dùng dấu chấm hay phẩy phân cách)\\\",\\n  \\\"content\\\": \\\"...\\\",\\n  \\\"time\\\": \\\"...\\\"\\n}\\nChỉ trả về JSON thuần, không markdown.\" }, { \"inline_data\": { \"mime_type\": $json.mimeType, \"data\": $json.base64 } } ] } ] }}"
+						}
+					]
+				},
+				"options": {}
+			},
       "id": "gemini-ocr",
       "name": "Gemini Pro Vision (OCR)",
       "type": "n8n-nodes-base.httpRequest",
